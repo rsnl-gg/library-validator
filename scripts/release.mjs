@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execSync, spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { dirname, resolve } from "node:path";
@@ -9,26 +9,25 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const pkgPath = resolve(root, "package.json");
 
-function npmBin() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
+function quoteCmd(arg) {
+  if (!/[\s"&()<>^|%]/.test(arg)) {
+    return arg;
+  }
+  return `"${arg.replaceAll('"', '""')}"`;
 }
 
-function run(command, args) {
-  const bin = command === "npm" ? npmBin() : command;
-  console.log(`> ${command} ${args.join(" ")}`);
-  const result = spawnSync(bin, args, { stdio: "inherit", cwd: root });
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+function run(command, args = []) {
+  const line = [command, ...args.map(quoteCmd)].join(" ");
+  console.log(`> ${line}`);
+  try {
+    execSync(line, { stdio: "inherit", cwd: root, env: process.env });
+  } catch {
+    process.exit(1);
   }
 }
 
 function git(args) {
   return spawnSync("git", args, { encoding: "utf8", cwd: root });
-}
-
-function calverThisMonth() {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
 function parseVersion(value) {
@@ -39,19 +38,36 @@ function parseVersion(value) {
   return { year: Number(match[1]), month: Number(match[2]), iteration: Number(match[3]) };
 }
 
-function tagExists(version) {
-  const result = git(["rev-parse", `v${version}`]);
-  return result.status === 0;
+function calverThisMonth() {
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth() + 1 };
 }
 
-function suggestedVersion(localVersion) {
+function hasRef(ref) {
+  return git(["rev-parse", "--verify", "--quiet", ref]).status === 0;
+}
+
+function tagExists(version) {
+  return hasRef(`refs/tags/v${version}`) || hasRef(`refs/tags/${version}`);
+}
+
+function npmHasVersion(name, version) {
+  const result = spawnSync("npm", ["view", `${name}@${version}`, "version"], {
+    encoding: "utf8",
+    cwd: root,
+    shell: true,
+  });
+  return result.status === 0 && result.stdout.trim() === version;
+}
+
+function suggestedVersion(pkg) {
   const { year, month } = calverThisMonth();
-  const parsed = parseVersion(localVersion);
+  const parsed = parseVersion(pkg.version);
   if (parsed && parsed.year === year && parsed.month === month) {
-    if (tagExists(localVersion)) {
+    if (npmHasVersion(pkg.name, pkg.version)) {
       return `${year}.${month}.${parsed.iteration + 1}`;
     }
-    return localVersion;
+    return pkg.version;
   }
   return `${year}.${month}.1`;
 }
@@ -80,33 +96,70 @@ async function askVersion(suggested) {
 }
 
 function assertGitReady() {
-  const repo = git(["rev-parse", "--is-inside-work-tree"]);
-  if (repo.status !== 0) {
+  if (git(["rev-parse", "--is-inside-work-tree"]).status !== 0) {
     console.error("Initialize a git repository and add a remote before releasing.");
     process.exit(1);
   }
-
-  const dirty = git(["status", "--porcelain"]);
-  if (dirty.stdout.trim()) {
+  if (git(["status", "--porcelain"]).stdout.trim()) {
     console.error("Working tree is not clean. Commit or stash changes before releasing.");
     process.exit(1);
   }
-
-  const remote = git(["remote"]);
-  if (!remote.stdout.trim()) {
+  if (!git(["remote"]).stdout.trim()) {
     console.error("No git remote configured. Add one before releasing.");
     process.exit(1);
   }
 }
 
-const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+function readPkg() {
+  return JSON.parse(readFileSync(pkgPath, "utf8"));
+}
+
+function writePkgVersion(version) {
+  const pkg = readPkg();
+  pkg.version = version;
+  writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+}
+
+function githubReleaseExists(tag) {
+  return spawnSync("gh", ["release", "view", tag], { cwd: root, stdio: "ignore" }).status === 0;
+}
+
 assertGitReady();
 
-const version = await askVersion(suggestedVersion(pkg.version));
+const pkg = readPkg();
+const current = pkg.version;
+const version = await askVersion(suggestedVersion(pkg));
 if (!parseVersion(version)) {
   console.error(`Invalid version "${version}". Use {year}.{month}.{iteration} such as 2026.9.1.`);
   process.exit(1);
 }
 
-run("npm", ["version", version, "--allow-same-version", "-m", "chore: release v%s"]);
+const releaseTag = `v${version}`;
+
+run("npm", ["run", "check"]);
+run("npm", ["run", "build"]);
+
+if (current !== version) {
+  writePkgVersion(version);
+  run("npm", ["install", "--package-lock-only"]);
+  run("git", ["add", "package.json", "package-lock.json"]);
+  run("git", ["commit", "-m", `chore: release ${releaseTag}`]);
+} else {
+  console.log(`package.json already at ${version}, skipping version commit.`);
+}
+
+if (!tagExists(version)) {
+  run("git", ["tag", releaseTag]);
+} else {
+  console.log(`Git tag for ${version} already exists, skipping tag.`);
+}
+
+run("git", ["push", "--follow-tags"]);
+
+if (githubReleaseExists(releaseTag)) {
+  console.log(`GitHub release ${releaseTag} already exists, skipping.`);
+} else {
+  run("npm", ["run", "release:github"]);
+}
+
 run("npm", ["publish"]);
