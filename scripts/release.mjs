@@ -9,16 +9,21 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
 const pkgPath = resolve(root, "package.json");
 
+function npmBin() {
+  return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
 function run(command, args) {
+  const bin = command === "npm" ? npmBin() : command;
   console.log(`> ${command} ${args.join(" ")}`);
-  const result = spawnSync(command, args, { stdio: "inherit", shell: true, cwd: root });
+  const result = spawnSync(bin, args, { stdio: "inherit", cwd: root });
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
 }
 
 function git(args) {
-  return spawnSync("git", args, { encoding: "utf8", shell: true, cwd: root });
+  return spawnSync("git", args, { encoding: "utf8", cwd: root });
 }
 
 function calverThisMonth() {
@@ -103,5 +108,5 @@ if (!parseVersion(version)) {
   process.exit(1);
 }
 
-run("npm", ["version", version, "--allow-same-version", "-m", "chore(release): v%s"]);
+run("npm", ["version", version, "--allow-same-version", "-m", "chore: release v%s"]);
 run("npm", ["publish"]);

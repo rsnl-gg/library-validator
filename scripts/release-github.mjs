@@ -7,7 +7,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(here, "..", "package.json"), "utf8"));
 const tag = `v${pkg.version}`;
 
-const which = spawnSync("gh", ["--version"], { stdio: "ignore", shell: true });
+const which = spawnSync("gh", ["--version"], { stdio: "ignore" });
 if (which.status !== 0) {
   console.error(
     "ERROR: GitHub CLI ('gh') is not installed or not on PATH.\n" +
@@ -17,11 +17,9 @@ if (which.status !== 0) {
 }
 
 console.log(`> gh release create ${tag} --generate-notes --title ${tag}`);
-const result = spawnSync(
-  "gh",
-  ["release", "create", tag, "--generate-notes", "--title", tag],
-  { stdio: "inherit", shell: true },
-);
+const result = spawnSync("gh", ["release", "create", tag, "--generate-notes", "--title", tag], {
+  stdio: "inherit",
+});
 
 if (result.status !== 0) {
   console.error(`gh release create exited with code ${result.status ?? "null"}.`);
