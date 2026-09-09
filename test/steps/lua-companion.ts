@@ -12,6 +12,7 @@ addTestStep("hasLuaScript companion file", async () => {
   );
 
   const result = await hasLuaScript(companion);
-  assert.equal(result, false);
+  assert.equal(result.found, false);
+  assert.deepEqual(result.extractedPaths, []);
   return result;
 });

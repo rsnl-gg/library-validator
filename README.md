@@ -28,7 +28,12 @@ if (!result.compatible) {
 }
 
 const hasLua = await hasLuaScript("path/to/mod");
-await hasLuaScript("path/to/mod", true); // write .lua files next to each patch
+if (hasLua.found) {
+  // no files written; extractedPaths is []
+}
+
+const extracted = await hasLuaScript("path/to/mod", true);
+// extracted.extractedPaths is string[] of written .lua files
 ```
 
 ## Library development
