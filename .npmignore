@@ -1,0 +1,2 @@
+# Replaces .gitignore during `npm pack` / `npm publish`.
+# dist/ is gitignored but must be in the tarball.

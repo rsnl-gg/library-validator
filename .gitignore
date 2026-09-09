@@ -1,0 +1,4 @@
+node_modules/
+dist/
+dist-test/
+extracted_game_assets/
