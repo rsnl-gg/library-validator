@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/rsnl-gg/library-validator/main/assets/rsnl_hor_logo.png" alt="RSNL" width="400">
+  <img src="https://github.com/rsnl-gg/library-validator/blob/master/assets/rsnl_hor_logo.png" alt="RSNL" width="400">
 </p>
 
 <p align="center">
