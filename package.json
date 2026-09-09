@@ -1,6 +1,6 @@
 {
   "name": "@rsnl-gg/library-validator",
-  "version": "2026.9.1",
+  "version": "2026.9.2",
   "description": "Validate Helldivers 2 .patch mods against game data: unit format compatibility and Lua script detection",
   "license": "MIT",
   "type": "module",
