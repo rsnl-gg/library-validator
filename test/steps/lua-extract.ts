@@ -23,7 +23,8 @@ addTestStep("hasLuaScript extract", async () => {
   const extracted = await hasLuaScript(patchPath, true);
   const extractedPath = path.join(gameDir, `${SAMPLE_FILE_ID_HEX}.lua`);
   const extractedSource = await readFile(extractedPath, "utf8");
-  assert.equal(extracted, true);
+  assert.equal(extracted.found, true);
+  assert.deepEqual(extracted.extractedPaths, [extractedPath]);
   assert.equal(extractedSource, luaSource);
   return { extracted, path: extractedPath, source: extractedSource.trim() };
 });

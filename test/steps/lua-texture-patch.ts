@@ -12,6 +12,7 @@ addTestStep("hasLuaScript texture patch", async () => {
   );
 
   const result = await hasLuaScript(patchPath);
-  assert.equal(result, false);
+  assert.equal(result.found, false);
+  assert.deepEqual(result.extractedPaths, []);
   return result;
 });

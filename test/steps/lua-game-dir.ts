@@ -12,6 +12,7 @@ addTestStep("hasLuaScript game dir", async () => {
   );
 
   const result = await hasLuaScript(gameDir);
-  assert.equal(result, true);
+  assert.equal(result.found, true);
+  assert.deepEqual(result.extractedPaths, []);
   return result;
 });

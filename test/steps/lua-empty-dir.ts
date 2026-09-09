@@ -6,6 +6,7 @@ import { addTestStep } from "../harness.js";
 addTestStep("hasLuaScript empty dir", async () => {
   const emptyDir = await workspace.createDir("empty");
   const result = await hasLuaScript(emptyDir);
-  assert.equal(result, false);
+  assert.equal(result.found, false);
+  assert.deepEqual(result.extractedPaths, []);
   return result;
 });

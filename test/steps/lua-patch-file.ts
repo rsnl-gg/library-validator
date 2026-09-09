@@ -12,6 +12,7 @@ addTestStep("hasLuaScript lua patch", async () => {
   );
 
   const result = await hasLuaScript(patchPath);
-  assert.equal(result, true);
+  assert.equal(result.found, true);
+  assert.deepEqual(result.extractedPaths, []);
   return result;
 });
