@@ -149,12 +149,13 @@ if (current !== version) {
 }
 
 if (!tagExists(version)) {
-  run("git", ["tag", releaseTag]);
+  run("git", ["tag", "-a", releaseTag, "-m", releaseTag]);
 } else {
   console.log(`Git tag for ${version} already exists, skipping tag.`);
 }
 
-run("git", ["push", "--follow-tags"]);
+run("git", ["push", "origin", "HEAD"]);
+run("git", ["push", "origin", `refs/tags/${releaseTag}`]);
 
 if (githubReleaseExists(releaseTag)) {
   console.log(`GitHub release ${releaseTag} already exists, skipping.`);
