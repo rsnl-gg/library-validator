@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { collectPatchPaths } from "../mod/patches.js";
 import { Archive } from "../stingray/archive.js";
-import { LUA_TYPE_ID, readLuaSource } from "../stingray/lua.js";
+import { LUA_TYPE_ID, decodeLuaAsset } from "../stingray/lua.js";
 
 /** Result of scanning a patch or mod folder for Lua script assets. */
 export interface LuaScriptResult {
@@ -14,7 +14,8 @@ export interface LuaScriptResult {
 
 /**
  * Detects Lua script assets in a patch file or a mod directory.
- * When extract is true, each script is written next to its patch as a `.lua` file named after the FileID.
+ * When extract is true, each script is written next to its patch as a readable `.lua` file named after the FileID.
+ * LuaJIT bytecode is decompiled to UTF-8 source before writing.
  * @param modPath - Path to a `.patch_N` file or a folder that contains patches, as `string`.
  * @param extract - When true, writes Lua source files to disk. Defaults to false, as `boolean`.
  * @returns Promise resolving to {@link LuaScriptResult}.
@@ -33,7 +34,7 @@ export async function hasLuaScript(modPath: string, extract = false): Promise<Lu
         return { found, extractedPaths };
       }
       const extractedPath = path.join(outDir, `${asset.fileId}.lua`);
-      await writeFile(extractedPath, readLuaSource(patch.read(asset)));
+      await writeFile(extractedPath, decodeLuaAsset(patch.read(asset)), "utf8");
       extractedPaths.push(extractedPath);
     }
   }

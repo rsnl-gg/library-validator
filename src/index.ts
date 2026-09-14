@@ -3,3 +3,4 @@ export type { UnitCompatibility, UnitCompatibilityReason } from "./check/units.j
 export { GenericError, InvalidFormatError, GameDataError } from "./errors.js";
 export { hasLuaScript } from "./check/lua.js";
 export type { LuaScriptResult } from "./check/lua.js";
+export { decodeLuaAsset, readLuaSource } from "./stingray/lua.js";

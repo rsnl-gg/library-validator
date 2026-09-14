@@ -34,6 +34,7 @@ if (hasLua.found) {
 
 const extracted = await hasLuaScript("path/to/mod", true);
 // extracted.extractedPaths is string[] of written .lua files
+// LuaJIT bytecode dumps are decompiled to UTF-8 source before writing
 ```
 
 ## Library development

@@ -33,13 +33,23 @@ export function buildUnitPayload(version: number): Uint8Array {
 
 /** Builds a Stingray Lua asset payload with an 8-byte header plus UTF-8 source. */
 export function buildLuaPayload(source: string): Uint8Array {
-  const body = Buffer.from(source, "utf8");
+  return buildLuaPayloadFromBytes(Buffer.from(source, "utf8"));
+}
+
+/** Builds a Stingray Lua asset payload with an 8-byte header plus raw body bytes. */
+export function buildLuaPayloadFromBytes(body: Uint8Array): Uint8Array {
   const payload = new Uint8Array(8 + body.length);
   writeU32(payload, 0, body.length);
   writeU32(payload, 4, 2);
   payload.set(body, 8);
   return payload;
 }
+
+/** Minimal stripped LuaJIT 2.1 dump for `return 1`. */
+export const LUAJIT_RETURN_ONE_DUMP = Buffer.from(
+  "1b4c4a02020f00000100000002290001004c00020000",
+  "hex",
+);
 
 /** Builds a one-asset archive containing `payload` of the given type id. */
 export function buildArchive(payload: Uint8Array, typeId = UNIT_TYPE): Uint8Array {

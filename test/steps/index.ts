@@ -6,5 +6,6 @@ import "./lua-texture-patch.js";
 import "./lua-patch-file.js";
 import "./lua-game-dir.js";
 import "./lua-extract.js";
+import "./lua-extract-bytecode.js";
 import "./lua-companion.js";
 import "./lua-empty-dir.js";
