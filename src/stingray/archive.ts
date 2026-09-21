@@ -9,6 +9,7 @@ export const ARCHIVE_HEADER_SIZE = 72;
 export const GAME_ASSET_TYPE_SIZE = 32;
 export const GAME_ASSET_HEADER_SIZE = 80;
 export const PATCH_NAME_RE = /^(.*)\.patch_(\d+)$/i;
+export const BACKUP_NAME_RE = /^(.*)\.backup_(\d+)$/i;
 
 /** One asset entry from an archive TOC. */
 export interface ArchiveAsset {
@@ -22,13 +23,77 @@ export interface ArchiveAsset {
   dataSize: number;
 }
 
+/** One type-table row from an archive TOC. */
+export interface ArchiveType {
+  /** Type hash as a 16-character hex `string`. */
+  typeId: string;
+  /** Declared resource count for this type as `number`. */
+  resourceCount: number;
+  /** Byte offset of the uint64 resource-count field as `number`. */
+  countOffset: number;
+}
+
+/** TOC asset plus the byte offset of its 80-byte header. */
+export interface ArchiveTocAsset extends ArchiveAsset {
+  /** Start of this 80-byte TOC header as `number`. */
+  headerOffset: number;
+}
+
+/** Parsed archive header, type table, and file table. */
+export interface ArchiveToc {
+  /** Type-table count as `number`. */
+  numTypes: number;
+  /** File-table count as `number`. */
+  numFiles: number;
+  /** Type-table rows as `ArchiveType[]`. */
+  types: ArchiveType[];
+  /** File-table rows as `ArchiveTocAsset[]`. */
+  assets: ArchiveTocAsset[];
+}
+
 /**
  * Parses a patch filename of the form archiveId.patch_N.
  * @param name - File basename as `string`.
  * @returns An object with `archiveId` as `string` and `patchIndex` as `number`, or `null` if the name is not a patch.
  */
 export function parsePatchName(name: string): { archiveId: string; patchIndex: number } | null {
-  const match = name.match(PATCH_NAME_RE);
+  return parseIndexedSuffix(name, PATCH_NAME_RE);
+}
+
+/**
+ * Parses a backup filename of the form archiveId.backup_N.
+ * @param name - File basename as `string`.
+ * @returns An object with `archiveId` as `string` and `patchIndex` as `number`, or `null` if the name is not a backup.
+ */
+export function parseBackupName(name: string): { archiveId: string; patchIndex: number } | null {
+  return parseIndexedSuffix(name, BACKUP_NAME_RE);
+}
+
+/**
+ * Returns the sibling backup path for a `.patch_N` file, using `.backup_N`.
+ * @param filePath - Patch file path as `string`.
+ * @returns Backup path as `string`.
+ */
+export function toPatchBackupPath(filePath: string): string {
+  const name = path.basename(filePath);
+  const parsed = parsePatchName(name);
+  if (!parsed) {
+    throw new InvalidFormatError(`not a patch filename: ${name}`);
+  }
+  return path.join(path.dirname(filePath), `${parsed.archiveId}.backup_${parsed.patchIndex}`);
+}
+
+/**
+ * Parses a basename of the form archiveId.suffix_N.
+ * @param name - File basename as `string`.
+ * @param pattern - Name pattern as `RegExp`.
+ * @returns An object with `archiveId` as `string` and `patchIndex` as `number`, or `null`.
+ */
+function parseIndexedSuffix(
+  name: string,
+  pattern: RegExp,
+): { archiveId: string; patchIndex: number } | null {
+  const match = name.match(pattern);
   if (!match) {
     return null;
   }
@@ -59,15 +124,11 @@ export function readArchiveTocSize(data: Uint8Array): number {
 }
 
 /**
- * Parses a decompressed archive buffer into an archive id and asset list.
+ * Parses the type table and file table of a decompressed archive.
  * @param data - Full archive bytes as `Uint8Array`.
- * @param filePath - Path used to derive the archive id as `string`.
- * @returns An object with `archiveId` as `string` and `assets` as `ArchiveAsset[]`.
+ * @returns Parsed TOC as {@link ArchiveToc}.
  */
-export function parseArchive(
-  data: Uint8Array,
-  filePath: string,
-): { archiveId: string; assets: ArchiveAsset[] } {
+export function parseArchiveToc(data: Uint8Array): ArchiveToc {
   const reader = new BinaryReader(data);
   if (reader.readU32() !== ARCHIVE_MAGIC) {
     throw new InvalidFormatError("invalid archive magic");
@@ -83,10 +144,21 @@ export function parseArchive(
     throw new InvalidFormatError(`archive TOC truncated: need ${tocSize}, have ${data.length}`);
   }
 
-  reader.seek(ARCHIVE_HEADER_SIZE + numTypes * GAME_ASSET_TYPE_SIZE);
+  const types: ArchiveType[] = [];
+  for (let i = 0; i < numTypes; i++) {
+    reader.seek(ARCHIVE_HEADER_SIZE + i * GAME_ASSET_TYPE_SIZE);
+    reader.readU64();
+    const typeId = toHex64(reader.readU64());
+    const countOffset = reader.offset;
+    const resourceCount = reader.readU64Number(`type[${i}].numResources`);
+    types.push({ typeId, resourceCount, countOffset });
+  }
 
-  const assets: ArchiveAsset[] = [];
+  const filesStart = ARCHIVE_HEADER_SIZE + numTypes * GAME_ASSET_TYPE_SIZE;
+  const assets: ArchiveTocAsset[] = [];
   for (let i = 0; i < numFiles; i++) {
+    const headerOffset = filesStart + i * GAME_ASSET_HEADER_SIZE;
+    reader.seek(headerOffset);
     const fileId = toHex64(reader.readU64());
     const typeId = toHex64(reader.readU64());
     const dataOffset = reader.readU64Number(`asset[${i}].dataOffset`);
@@ -95,20 +167,33 @@ export function parseArchive(
     reader.readU64();
     reader.readU64();
     const dataSize = reader.readU32();
-    reader.readU32();
-    reader.readU32();
-    reader.readU32();
-    reader.readU32();
-    reader.readU32();
-    assets.push({ fileId, typeId, dataOffset, dataSize });
+    assets.push({ fileId, typeId, dataOffset, dataSize, headerOffset });
   }
 
+  return { numTypes, numFiles, types, assets };
+}
+
+/**
+ * Parses a decompressed archive buffer into an archive id and asset list.
+ * @param data - Full archive bytes as `Uint8Array`.
+ * @param filePath - Path used to derive the archive id as `string`.
+ * @returns An object with `archiveId` as `string` and `assets` as `ArchiveAsset[]`.
+ */
+export function parseArchive(
+  data: Uint8Array,
+  filePath: string,
+): { archiveId: string; assets: ArchiveAsset[] } {
+  const toc = parseArchiveToc(data);
   const name = path.basename(filePath);
   const patch = parsePatchName(name);
-
   return {
     archiveId: (patch?.archiveId ?? name).toLowerCase(),
-    assets,
+    assets: toc.assets.map((asset) => ({
+      fileId: asset.fileId,
+      typeId: asset.typeId,
+      dataOffset: asset.dataOffset,
+      dataSize: asset.dataSize,
+    })),
   };
 }
 
@@ -121,8 +206,15 @@ export class Archive {
     readonly archiveId: string,
     /** Parsed TOC assets as `readonly ArchiveAsset[]`. */
     readonly assets: readonly ArchiveAsset[],
+    /** True when the file on disk was a compressed DSAR container, as `boolean`. */
+    readonly compressed: boolean,
     private readonly data: Uint8Array,
   ) {}
+
+  /** Decompressed archive bytes as `Uint8Array`. */
+  get bytes(): Uint8Array {
+    return this.data;
+  }
 
   /**
    * Opens a standalone archive or `.patch_N` file, decompresses DSAR if needed, and parses the TOC.
@@ -132,9 +224,10 @@ export class Archive {
   static async open(filePath: string): Promise<Archive> {
     const abs = path.resolve(filePath);
     const prefix = await readPrefix(abs, 4);
-    const data = isDsarMagic(prefix) ? await decompressDsar(abs) : new Uint8Array(await readFile(abs));
+    const compressed = isDsarMagic(prefix);
+    const data = compressed ? await decompressDsar(abs) : new Uint8Array(await readFile(abs));
     const parsed = parseArchive(data, abs);
-    return new Archive(abs, parsed.archiveId, parsed.assets, data);
+    return new Archive(abs, parsed.archiveId, parsed.assets, compressed, data);
   }
 
   /**

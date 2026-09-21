@@ -1,6 +1,6 @@
-import { open } from "node:fs/promises";
+import { access, open, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { InvalidFormatError } from "../errors.js";
+import { GenericError, InvalidFormatError } from "../errors.js";
 
 /**
  * Reads up to the requested number of bytes from the start of a file.
@@ -38,4 +38,56 @@ export async function readExact(filePath: string, offset: number, size: number):
   } finally {
     await handle.close();
   }
+}
+
+/**
+ * Renames `filePath` to `backupPath`, then writes `bytes` to `filePath`.
+ * If the write fails, the original file is restored to `filePath`.
+ * @param filePath - Path of the live file as `string`.
+ * @param backupPath - Path to keep the original file as `string`.
+ * @param bytes - Replacement contents as `Uint8Array`.
+ * @param write - Optional writer used by tests. Receives `filePath` as `string` and `bytes` as `Uint8Array`.
+ * @returns Promise that resolves to `void`.
+ */
+export async function replaceWithBackup(
+  filePath: string,
+  backupPath: string,
+  bytes: Uint8Array,
+  write: (target: string, data: Uint8Array) => Promise<void> = defaultWrite,
+): Promise<void> {
+  if (await fileExists(backupPath)) {
+    throw new GenericError(`backup already exists: ${path.basename(backupPath)}`);
+  }
+  await rename(filePath, backupPath);
+  try {
+    await write(filePath, bytes);
+  } catch (error) {
+    await rm(filePath, { force: true });
+    await rename(backupPath, filePath);
+    throw error;
+  }
+}
+
+/**
+ * Reports whether a path exists.
+ * @param filePath - Path to test as `string`.
+ * @returns Promise resolving to `boolean`.
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Writes bytes to a file, replacing it if it already exists.
+ * @param target - Destination path as `string`.
+ * @param data - Contents as `Uint8Array`.
+ * @returns Promise that resolves to `void`.
+ */
+async function defaultWrite(target: string, data: Uint8Array): Promise<void> {
+  await writeFile(target, data);
 }

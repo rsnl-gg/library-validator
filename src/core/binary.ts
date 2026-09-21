@@ -178,6 +178,34 @@ export function readU32(data: Uint8Array, offset: number): number {
 }
 
 /**
+ * Writes a little-endian uint32 at an absolute offset.
+ * @param data - Buffer as `Uint8Array`.
+ * @param offset - Byte offset as `number`.
+ * @param value - Value to write as `number`.
+ * @returns Nothing, typed as `void`.
+ */
+export function writeU32(data: Uint8Array, offset: number, value: number): void {
+  if (offset + 4 > data.length) {
+    throw new InvalidFormatError(`uint32 write out of range at ${offset}`);
+  }
+  new DataView(data.buffer, data.byteOffset, data.byteLength).setUint32(offset, value, true);
+}
+
+/**
+ * Writes a little-endian uint64 at an absolute offset.
+ * @param data - Buffer as `Uint8Array`.
+ * @param offset - Byte offset as `number`.
+ * @param value - Value to write as `bigint`.
+ * @returns Nothing, typed as `void`.
+ */
+export function writeU64(data: Uint8Array, offset: number, value: bigint): void {
+  if (offset + 8 > data.length) {
+    throw new InvalidFormatError(`uint64 write out of range at ${offset}`);
+  }
+  new DataView(data.buffer, data.byteOffset, data.byteLength).setBigUint64(offset, value, true);
+}
+
+/**
  * Returns a slice of a buffer at an offset with a given length.
  * Throws {@link InvalidFormatError} if the range would run past the buffer.
  * @param data - Buffer as `Uint8Array`.

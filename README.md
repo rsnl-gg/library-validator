@@ -6,7 +6,7 @@
 HD2 Arsenal Validator Library
 </p>
 
-Validates Helldivers 2 `.patch` mods against game data. It compares unit format versions and detects Lua scripts in a patch file or a mod folder.
+Validates Helldivers 2 `.patch` mods against game data. It compares unit format versions, can rewrite outdated unit patches, and detects Lua scripts in a patch file or a mod folder.
 
 ## Usage
 
@@ -26,6 +26,15 @@ const result = await checkUnitCompatibility(
 if (!result.compatible) {
   // result.reason is "no-unit" or "version-mismatch"
 }
+
+const repaired = await checkUnitCompatibility(
+  ["path/to/archive.patch_0", "path/to/other.patch_0"],
+  "path/to/helldivers2/data",
+  { repair: true },
+);
+// repaired is UnitCompatibility[] in input order
+// entry.repaired is true when that version-mismatch patch was renamed to .backup_N
+// and a new .patch_N was written. A failed write restores the original .patch_N name.
 
 const hasLua = await hasLuaScript("path/to/mod");
 if (hasLua.found) {

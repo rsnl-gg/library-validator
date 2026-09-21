@@ -2,6 +2,7 @@ import "./read-unit-version.js";
 import "./unit-version-mismatch.js";
 import "./unit-compatible.js";
 import "./unit-no-unit.js";
+import "./unit-repair.js";
 import "./lua-texture-patch.js";
 import "./lua-patch-file.js";
 import "./lua-game-dir.js";
