@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { collectPatchPaths } from "../mod/patches.js";
-import { Archive } from "../stingray/archive.js";
+import { PatchToc } from "../stingray/archive.js";
 import { LUA_TYPE_ID, decodeLuaAsset } from "../stingray/lua.js";
 
 /** Result of scanning a patch or mod folder for Lua script assets. */
@@ -16,6 +16,7 @@ export interface LuaScriptResult {
  * Detects Lua script assets in a patch file or a mod directory.
  * When extract is true, each script is written next to its patch as a readable `.lua` file named after the FileID.
  * LuaJIT bytecode is decompiled to UTF-8 source before writing.
+ * Only the TOC of each patch is read, plus the Lua payloads when extracting.
  * @param modPath - Path to a `.patch_N` file or a folder that contains patches, as `string`.
  * @param extract - When true, writes Lua source files to disk. Defaults to false, as `boolean`.
  * @returns Promise resolving to {@link LuaScriptResult}.
@@ -25,17 +26,21 @@ export async function hasLuaScript(modPath: string, extract = false): Promise<Lu
   let found = false;
 
   for (const patchPath of await collectPatchPaths(path.resolve(modPath))) {
-    const patch = await Archive.open(patchPath);
+    const patch = await PatchToc.open(patchPath);
     const outDir = path.dirname(patchPath);
 
-    for (const asset of patch.assetsOf(LUA_TYPE_ID)) {
-      found = true;
-      if (!extract) {
-        return { found, extractedPaths };
+    try {
+      for (const asset of patch.assetsOf(LUA_TYPE_ID)) {
+        found = true;
+        if (!extract) {
+          return { found, extractedPaths };
+        }
+        const extractedPath = path.join(outDir, `${asset.fileId}.lua`);
+        await writeFile(extractedPath, decodeLuaAsset(await patch.read(asset)), "utf8");
+        extractedPaths.push(extractedPath);
       }
-      const extractedPath = path.join(outDir, `${asset.fileId}.lua`);
-      await writeFile(extractedPath, decodeLuaAsset(patch.read(asset)), "utf8");
-      extractedPaths.push(extractedPath);
+    } finally {
+      await patch.close();
     }
   }
 

@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ARCHIVE_MAGIC, BinaryReader, sliceExact, toHex64 } from "../core/binary.js";
-import { readPrefix } from "../core/io.js";
+import { openFileRange, readPrefix, type RangeReader } from "../core/io.js";
 import { InvalidFormatError } from "../errors.js";
 import { DsarReader, isDsarMagic } from "./dsar.js";
 
@@ -246,6 +246,124 @@ export class Archive {
    */
   assetsOf(typeId: string): ArchiveAsset[] {
     return this.assets.filter((asset) => asset.typeId === typeId && asset.dataSize > 0);
+  }
+}
+
+/**
+ * Opens a standalone archive or `.patch_N` file for ranged reads in decompressed space.
+ * DSAR containers only decompress the chunks that are actually read.
+ * @param filePath - Path to the archive file as `string`.
+ * @returns Promise resolving to the reader as `RangeReader` and `compressed` as `boolean`.
+ */
+export async function openArchiveRange(
+  filePath: string,
+): Promise<{ reader: RangeReader; compressed: boolean }> {
+  const file = await openFileRange(filePath);
+  let prefix: Uint8Array;
+  try {
+    prefix = await file.read(0, Math.min(4, file.length));
+  } catch (error) {
+    await file.close();
+    throw error;
+  }
+  if (!isDsarMagic(prefix)) {
+    return { reader: file, compressed: false };
+  }
+
+  await file.close();
+  const dsar = await DsarReader.open(filePath);
+  const length = dsar.structure.chunks.reduce((sum, chunk) => sum + chunk.uncompressedSize, 0);
+  return {
+    compressed: true,
+    reader: {
+      length,
+      async read(offset: number, size: number): Promise<Uint8Array> {
+        if (offset < 0 || size < 0 || offset + size > length) {
+          throw new InvalidFormatError(
+            `${path.basename(filePath)}: range ${offset}+${size} exceeds archive of ${length} bytes`,
+          );
+        }
+        return dsar.readRange(offset, size);
+      },
+      close: () => dsar.close(),
+    },
+  };
+}
+
+/**
+ * Stingray archive or `.patch` file opened for its TOC only.
+ * Payloads are read on demand, so memory and I/O do not depend on the file size.
+ */
+export class PatchToc {
+  private constructor(
+    /** Absolute path of the opened file as `string`. */
+    readonly filePath: string,
+    /** Archive identifier derived from the filename as `string`. */
+    readonly archiveId: string,
+    /** Parsed TOC assets as `readonly ArchiveAsset[]`. */
+    readonly assets: readonly ArchiveAsset[],
+    /** True when the file on disk was a compressed DSAR container, as `boolean`. */
+    readonly compressed: boolean,
+    private readonly reader: RangeReader,
+  ) {}
+
+  /** Archive length in decompressed space as `number`, the size `Archive.bytes` would have. */
+  get length(): number {
+    return this.reader.length;
+  }
+
+  /**
+   * Opens an archive and parses its TOC without reading any payload.
+   * @param filePath - Path to the archive file as `string`.
+   * @returns Promise resolving to `PatchToc`. Call {@link PatchToc.close} when done.
+   */
+  static async open(filePath: string): Promise<PatchToc> {
+    const abs = path.resolve(filePath);
+    const { reader, compressed } = await openArchiveRange(abs);
+    try {
+      const tocSize = readArchiveTocSize(await reader.read(0, 12));
+      const parsed = parseArchive(await reader.read(0, tocSize), abs);
+      return new PatchToc(abs, parsed.archiveId, parsed.assets, compressed, reader);
+    } catch (error) {
+      await reader.close();
+      throw error;
+    }
+  }
+
+  /**
+   * Reads the payload of one TOC asset, or only its first bytes.
+   * @param asset - TOC entry as `ArchiveAsset`.
+   * @param size - Bytes to read from the payload start as `number`. Defaults to the whole payload.
+   * @returns Promise resolving to the payload as `Uint8Array`.
+   */
+  read(asset: ArchiveAsset, size = asset.dataSize): Promise<Uint8Array> {
+    return this.reader.read(asset.dataOffset, Math.min(size, asset.dataSize));
+  }
+
+  /**
+   * Reports whether a payload lies inside the archive, as {@link Archive.read} requires.
+   * @param asset - TOC entry as `ArchiveAsset`.
+   * @returns `true` when the range fits, as `boolean`.
+   */
+  contains(asset: ArchiveAsset): boolean {
+    return asset.dataOffset >= 0 && asset.dataSize >= 0 && asset.dataOffset + asset.dataSize <= this.length;
+  }
+
+  /**
+   * Returns TOC assets of the given type id that have a non-empty payload.
+   * @param typeId - Type hash as a 16-character hex `string`.
+   * @returns Matching entries as `ArchiveAsset[]`.
+   */
+  assetsOf(typeId: string): ArchiveAsset[] {
+    return this.assets.filter((asset) => asset.typeId === typeId && asset.dataSize > 0);
+  }
+
+  /**
+   * Closes the underlying file handle.
+   * @returns Promise that resolves to `void`.
+   */
+  close(): Promise<void> {
+    return this.reader.close();
   }
 }
 

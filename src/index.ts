@@ -1,6 +1,8 @@
-export { checkUnitCompatibility } from "./check/units.js";
+export { checkUnitCompatibility, UnitChecker } from "./check/units.js";
 export type {
   CheckUnitCompatibilityOptions,
+  UnitCheckerOptions,
+  UnitCheckOptions,
   UnitCompatibility,
   UnitCompatibilityReason,
 } from "./check/units.js";

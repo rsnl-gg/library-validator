@@ -201,7 +201,7 @@ addTestStep("replaceWithBackup restores the original patch name if writing fails
   return { restored: true };
 });
 
-addTestStep("unit repair leaves the original patch when a backup already exists", async () => {
+addTestStep("unit repair leaves the patch when the existing backup cannot be used", async () => {
   const gameDir = await workspace.createDir("backup-exists");
   const archiveId = "aabbccddeeff0028";
   const originalBytes = buildArchive(buildRepairUnitPayload(PATCH_VERSION, PATCH_LOD));

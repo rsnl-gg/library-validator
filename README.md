@@ -46,6 +46,27 @@ const extracted = await hasLuaScript("path/to/mod", true);
 // LuaJIT bytecode dumps are decompiled to UTF-8 source before writing
 ```
 
+### Checking many patches
+
+`UnitChecker` indexes game data once and checks one patch per call, reading only the patch TOC and unit headers. Memory stays flat however many patches you check; a patch is read in full only when it gets repaired.
+
+```ts
+import { UnitChecker } from "@rsnl-gg/library-validator";
+
+const checker = await UnitChecker.open("path/to/helldivers2/data");
+try {
+  for (const patchPath of patchPaths) {
+    const result = await checker.check(patchPath, { repair: true });
+    // same UnitCompatibility as checkUnitCompatibility for that path
+  }
+  if (await checker.isStale()) {
+    // game data changed (for example a game update): open a new checker
+  }
+} finally {
+  await checker.close();
+}
+```
+
 ## Library development
 
 ```bash

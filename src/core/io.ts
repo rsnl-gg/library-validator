@@ -40,6 +40,59 @@ export async function readExact(filePath: string, offset: number, size: number):
   }
 }
 
+/** Random-access reader over one open file. */
+export interface RangeReader {
+  /** Readable length in bytes as `number`. */
+  readonly length: number;
+  /**
+   * Reads an exact byte range. Throws {@link InvalidFormatError} if the range is out of bounds.
+   * @param offset - Start offset in bytes as `number`.
+   * @param size - Exact number of bytes as `number`.
+   * @returns Promise resolving to `Uint8Array` of length size.
+   */
+  read(offset: number, size: number): Promise<Uint8Array>;
+  /**
+   * Closes the underlying handle.
+   * @returns Promise that resolves to `void`.
+   */
+  close(): Promise<void>;
+}
+
+/**
+ * Opens a file once for many ranged reads, instead of one open per read.
+ * @param filePath - File to read as `string`.
+ * @returns Promise resolving to {@link RangeReader}.
+ */
+export async function openFileRange(filePath: string): Promise<RangeReader> {
+  const handle = await open(filePath, "r");
+  try {
+    const { size: length } = await handle.stat();
+    return {
+      length,
+      async read(offset: number, size: number): Promise<Uint8Array> {
+        if (offset < 0 || size < 0 || offset + size > length) {
+          throw new InvalidFormatError(
+            `${path.basename(filePath)}: range ${offset}+${size} exceeds file of ${length} bytes`,
+          );
+        }
+        const buffer = Buffer.alloc(size);
+        if (size === 0) {
+          return buffer;
+        }
+        const { bytesRead } = await handle.read(buffer, 0, size, offset);
+        if (bytesRead !== size) {
+          throw new InvalidFormatError(`truncated read in ${path.basename(filePath)}`);
+        }
+        return buffer;
+      },
+      close: () => handle.close(),
+    };
+  } catch (error) {
+    await handle.close();
+    throw error;
+  }
+}
+
 /**
  * Renames `filePath` to `backupPath`, then writes `bytes` to `filePath`.
  * If the write fails, the original file is restored to `filePath`.
@@ -64,6 +117,23 @@ export async function replaceWithBackup(
   } catch (error) {
     await rm(filePath, { force: true });
     await rename(backupPath, filePath);
+    throw error;
+  }
+}
+
+/**
+ * Replaces a file through a temporary sibling, so a failed write never leaves it half written.
+ * @param filePath - Path of the file to replace as `string`.
+ * @param bytes - New contents as `Uint8Array`.
+ * @returns Promise that resolves to `void`.
+ */
+export async function replaceFile(filePath: string, bytes: Uint8Array): Promise<void> {
+  const tempPath = `${filePath}.tmp`;
+  try {
+    await writeFile(tempPath, bytes);
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await rm(tempPath, { force: true });
     throw error;
   }
 }

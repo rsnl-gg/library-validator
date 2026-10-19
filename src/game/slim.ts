@@ -76,8 +76,8 @@ export class SlimSession {
       if (overlapStart >= overlapEnd) {
         continue;
       }
-      const data = await this.readEntry(pkg, i);
-      out.set(data.subarray(overlapStart - start, overlapEnd - start), overlapStart - from);
+      const data = await this.readEntry(pkg, i, overlapStart - start, overlapEnd - overlapStart);
+      out.set(data, overlapStart - from);
       filled += overlapEnd - overlapStart;
     }
 
@@ -112,12 +112,14 @@ export class SlimSession {
   }
 
   /**
-   * Reads one DSAA package entry from its bundle.
+   * Reads one DSAA package entry from its bundle, or only part of it.
    * @param pkg - Package that owns the entry as `BundlePackage`.
    * @param index - Entry index as `number`.
+   * @param skip - Bytes to skip from the entry start as `number`. Defaults to 0.
+   * @param take - Bytes to read as `number`. Defaults to the rest of the entry.
    * @returns Promise resolving to the slice as `Uint8Array`.
    */
-  private async readEntry(pkg: BundlePackage, index: number): Promise<Uint8Array> {
+  private async readEntry(pkg: BundlePackage, index: number, skip = 0, take?: number): Promise<Uint8Array> {
     const entry = pkg.entries[index];
     const size = entrySize(pkg, index);
     if (size < 0) {
@@ -127,7 +129,7 @@ export class SlimSession {
     if (!bundleName) {
       throw new InvalidFormatError(`bundle index ${entry.bundleIndex} missing for ${pkg.name}`);
     }
-    return (await this.bundleReader(bundleName)).readRange(entry.uncompressedBundleOffset, size);
+    return (await this.bundleReader(bundleName)).readRange(entry.uncompressedBundleOffset + skip, take ?? size - skip);
   }
 
   /**
